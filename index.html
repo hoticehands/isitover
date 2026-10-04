@@ -27,7 +27,20 @@ input:focus { border-color: var(--accent); }
 button, .btn { height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; text-decoration: none; }
 button.main { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); margin-top: 12px; }
 #err { color: var(--err); margin: 8px 0 0; min-height: 22px; font-size: 13px; }
-#slow { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 5; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
+/* 인트로: 웹앱이 뜰 때까지 앞을 덮는다(구글 웹앱은 처음 열 때 몇 초 걸린다). 웹앱이 신호를 보내면 사라진다 */
+#splash { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: grid; place-content: center; justify-items: center; gap: 4px; transition: opacity .28s; }
+#splash.out { opacity: 0; pointer-events: none; }
+#splash img { width: 96px; height: 96px; border-radius: 26px; animation: pulse 1.8s ease-in-out infinite; }
+#splash b { font-size: 21px; margin-top: 14px; letter-spacing: -.02em; }
+#splash span { color: var(--sub); font-size: 13px; }
+#splash .dots { display: flex; gap: 6px; margin-top: 22px; }
+#splash .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .25; animation: blink 1.2s ease-in-out infinite; }
+#splash .dots i:nth-child(2) { animation-delay: .18s; }
+#splash .dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes pulse { 50% { transform: scale(1.06); } }
+@keyframes blink { 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #splash img, #splash .dots i { animation: none; } #splash { transition: none; } }
+#slow { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
 #slow p { margin: 0 0 10px; font-size: 14px; }
 #slow .row { display: flex; gap: 8px; flex-wrap: wrap; }
 </style>
@@ -47,6 +60,13 @@ button.main { background: var(--accent); border-color: var(--accent); color: var
 </main>
 
 <iframe id="app" title="해치웠나" allow="clipboard-write" hidden></iframe>
+
+<div id="splash" aria-live="polite">
+  <img src="icon-192.png" alt="">
+  <b>해치웠나</b>
+  <span>Is It Over?</span>
+  <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+</div>
 
 <div id="slow" hidden>
   <p>아직 안 열렸습니다. 로그인이 풀렸거나 연결이 느릴 수 있습니다.</p>
@@ -82,6 +102,7 @@ button.main { background: var(--accent); border-color: var(--accent); color: var
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () { /* 설치 조건용이라 실패해도 앱은 열린다 */ });
 
   if (!base || q.get('setup')) {
+    $('splash').hidden = true;
     $('setup').hidden = false;
     $('form').addEventListener('submit', function (e) {
       e.preventDefault();
@@ -95,11 +116,18 @@ button.main { background: var(--accent); border-color: var(--accent); color: var
 
   var frame = $('app'), ready = false, src = base + (add ? '?add=1' : '');
   $('out').href = src;
-  function open() { ready = false; $('slow').hidden = true; frame.hidden = false; frame.src = src; setTimeout(function () { if (!ready) $('slow').hidden = false; }, 8000); }
-  // 웹앱 화면이 뜨면 위(껍데기)로 신호를 보낸다. 신호가 없으면 로그인 문제 등을 의심해 안내를 띄운다
+  var splash = $('splash');
+  function showSplash() { splash.hidden = false; void splash.offsetWidth; splash.classList.remove('out'); }
+  function hideSplash() { splash.classList.add('out'); setTimeout(function () { if (splash.classList.contains('out')) splash.hidden = true; }, 320); }
+  function open() {
+    ready = false; $('slow').hidden = true; showSplash(); frame.hidden = false; frame.src = src;
+    // 8초 안에 신호가 없으면 인트로를 걷고 안내를 띄운다(로그인이 풀렸을 때 인트로에 갇히지 않게)
+    setTimeout(function () { if (!ready) { hideSplash(); $('slow').hidden = false; } }, 8000);
+  }
+  // 웹앱 화면이 뜨면 위(껍데기)로 신호를 보낸다. 신호가 오면 인트로를 걷는다
   window.addEventListener('message', function (e) {
     var okOrigin = e.origin === location.origin || /(^|\.)googleusercontent\.com$/.test(e.origin.replace(/^https?:\/\//, ''));
-    if (okOrigin && e.data && e.data.isitover === 'ready') { ready = true; $('slow').hidden = true; }
+    if (okOrigin && e.data && e.data.isitover === 'ready') { ready = true; $('slow').hidden = true; hideSplash(); }
   });
   $('retry').addEventListener('click', open);
   $('change').addEventListener('click', function () { location.href = location.pathname + '?setup=1' + (add ? '&add=1' : ''); });
