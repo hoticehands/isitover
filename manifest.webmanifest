@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "해치웠나",
-  "short_name": "해치웠나",
+  "name": "해치웠나?",
+  "short_name": "해치웠나?",
   "description": "Is It Over?",
   "start_url": "./?add=1",
   "scope": "./",
