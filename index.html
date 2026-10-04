@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f6f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101012" media="(prefers-color-scheme: dark)">
+<title>해치웠나</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root { --bg: #f6f6f5; --surface: #fff; --ink: #1c1c1f; --sub: #6e6e76; --line: #e6e6e8; --accent: #0e7a62; --accent-ink: #fff; --err: #b4233e; }
+@media (prefers-color-scheme: dark) { :root { --bg: #101012; --surface: #19191c; --ink: #ececef; --sub: #9a9aa3; --line: #2a2a30; --accent: #3fb38f; --accent-ink: #08130f; --err: #f08397; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif; }
+iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+[hidden] { display: none !important; }
+.card { max-width: 420px; margin: 0 auto; padding: 56px 20px 32px; }
+.card img { width: 56px; height: 56px; border-radius: 16px; display: block; }
+h1 { font-size: 22px; margin: 16px 0 4px; letter-spacing: -.02em; }
+.sub { color: var(--sub); margin: 0 0 20px; font-size: 13px; }
+p { margin: 0 0 14px; }
+input { width: 100%; height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; outline: 0; }
+input:focus { border-color: var(--accent); }
+button, .btn { height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; text-decoration: none; }
+button.main { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); margin-top: 12px; }
+#err { color: var(--err); margin: 8px 0 0; min-height: 22px; font-size: 13px; }
+#slow { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 5; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
+#slow p { margin: 0 0 10px; font-size: 14px; }
+#slow .row { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<main id="setup" class="card" hidden>
+  <img src="icon-192.png" alt="">
+  <h1>해치웠나</h1>
+  <p class="sub">Is It Over?</p>
+  <p>웹앱 주소를 한 번만 붙여 넣어 주세요. 이 기기의 브라우저에만 저장되고 어디에도 올라가지 않습니다.</p>
+  <form id="form" autocomplete="off">
+    <input id="url" type="url" inputmode="url" placeholder="https://script.google.com/…/exec" aria-label="웹앱 주소" spellcheck="false">
+    <div id="err" role="alert"></div>
+    <button class="main" type="submit">저장하고 열기</button>
+  </form>
+</main>
+
+<iframe id="app" title="해치웠나" allow="clipboard-write" hidden></iframe>
+
+<div id="slow" hidden>
+  <p>아직 안 열렸습니다. 로그인이 풀렸거나 연결이 느릴 수 있습니다.</p>
+  <div class="row">
+    <a id="out" class="btn" target="_blank" rel="noopener">새 탭에서 열기</a>
+    <button id="retry" type="button">다시 시도</button>
+    <button id="change" type="button">주소 바꾸기</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  var KEY = 'isitover.appUrl';
+  var DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname); // 내 컴퓨터에서 시험할 때만 localhost 주소를 허용
+  function $(id) { return document.getElementById(id); }
+
+  // 구글 웹앱 주소(…/exec)만 받는다. 다른 사이트를 껍데기 안에 열지 않으려는 것이다. 물음표 뒤와 # 뒤는 버린다
+  function clean(raw) {
+    var u;
+    try { u = new URL(String(raw || '').trim()); } catch (e) { return ''; }
+    if (DEV && u.hostname === 'localhost') return u.origin + u.pathname;
+    if (u.protocol !== 'https:' || u.hostname !== 'script.google.com') return '';
+    if (!/\/s\/[A-Za-z0-9_-]+\/exec$/.test(u.pathname)) return '';
+    return u.origin + u.pathname;
+  }
+  function get() { try { return clean(localStorage.getItem(KEY)); } catch (e) { return ''; } }
+  function put(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
+
+  var q = new URLSearchParams(location.search);
+  var add = q.get('add') === '1';
+  var base = get();
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () { /* 설치 조건용이라 실패해도 앱은 열린다 */ });
+
+  if (!base || q.get('setup')) {
+    $('setup').hidden = false;
+    $('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var v = clean($('url').value);
+      if (!v) { $('err').textContent = '구글 웹앱 주소(…/exec)가 아닙니다. 배포 관리에서 복사한 주소를 붙여 주세요.'; return; }
+      if (!put(v)) { $('err').textContent = '이 브라우저는 주소를 저장하지 못합니다(시크릿 창이거나 저장소 차단).'; return; }
+      location.replace(location.pathname + (add ? '?add=1' : ''));
+    });
+    return;
+  }
+
+  var frame = $('app'), ready = false, src = base + (add ? '?add=1' : '');
+  $('out').href = src;
+  function open() { ready = false; $('slow').hidden = true; frame.hidden = false; frame.src = src; setTimeout(function () { if (!ready) $('slow').hidden = false; }, 8000); }
+  // 웹앱 화면이 뜨면 위(껍데기)로 신호를 보낸다. 신호가 없으면 로그인 문제 등을 의심해 안내를 띄운다
+  window.addEventListener('message', function (e) {
+    var okOrigin = e.origin === location.origin || /(^|\.)googleusercontent\.com$/.test(e.origin.replace(/^https?:\/\//, ''));
+    if (okOrigin && e.data && e.data.isitover === 'ready') { ready = true; $('slow').hidden = true; }
+  });
+  $('retry').addEventListener('click', open);
+  $('change').addEventListener('click', function () { location.href = location.pathname + '?setup=1' + (add ? '&add=1' : ''); });
+  open();
+})();
+</script>
+</body>
+</html>
